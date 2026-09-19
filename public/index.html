@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metro Leak Watch</title>
+<meta name="description" content="Live replay of an air-leak detector running on seven months of real metro compressor data.">
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb;
+    --panel: #ffffff;
+    --panel-2: #f4f6f8;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #8a8f94;
+    --line: #e4e3df;
+    --blue: #2a78d6;
+    --orange: #eb6834;
+    --aqua: #1baf7a;
+    --red: #d64545;
+    --shadow: 0 1px 2px rgba(16,24,32,.06), 0 8px 24px rgba(16,24,32,.06);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface: #11191f;
+      --panel: #17222b;
+      --panel-2: #1f2d38;
+      --ink: #ffffff;
+      --ink-2: #c3c8cc;
+      --muted: #8a949c;
+      --line: #27343f;
+      --blue: #3987e5;
+      --orange: #f07a4a;
+      --aqua: #23c68a;
+      --red: #e66767;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface: #11191f; --panel: #17222b; --panel-2: #1f2d38; --ink: #ffffff; --ink-2: #c3c8cc;
+    --muted: #8a949c; --line: #27343f; --blue: #3987e5; --orange: #f07a4a; --aqua: #23c68a; --red: #e66767;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { max-width: 100%; overflow-x: hidden; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px 56px; }
+  header { padding: 28px 0 18px; display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  h1 { font-size: clamp(22px, 3.4vw, 32px); margin: 0 0 6px; letter-spacing: -.02em; }
+  .sub { color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .spacer { flex: 1 1 auto; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
+    background: var(--panel-2); color: var(--ink-2); font-size: 12.5px; border: 1px solid var(--line);
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+  button {
+    font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 9px; padding: 8px 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .primary { background: var(--orange); border-color: var(--orange); color: #fff; font-weight: 600; min-width: 104px; }
+  .primary:hover { filter: brightness(1.05); border-color: var(--orange); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .kpi .v { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--orange); }
+  .kpi .l { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+  .kpi .n { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 2px; letter-spacing: .01em; }
+  .card p.hint { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; }
+  .status { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 13px 16px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel-2); margin-bottom: 16px; }
+  .status.on { background: color-mix(in srgb, var(--red) 14%, var(--panel)); border-color: var(--red); }
+  .dotlight { width: 13px; height: 13px; border-radius: 50%; background: var(--aqua); flex: none; }
+  .status.on .dotlight { background: var(--red); animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .status .headline { font-weight: 700; }
+  .status .reason { color: var(--ink-2); font-size: 13.5px; }
+  .clock { font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 13.5px; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  input[type=range] { flex: 1 1 260px; accent-color: var(--orange); }
+  canvas { width: 100%; display: block; touch-action: none; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-2); font-size: 12.5px; margin-top: 8px; }
+  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+  .mini { background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px; }
+  .mini .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .mini .name { font-size: 13px; color: var(--ink-2); }
+  .mini .val { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .mini .z { font-size: 11.5px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--ink-2); font-weight: 600; font-size: 12.5px; }
+  td.num { font-variant-numeric: tabular-nums; }
+  tr.test td:first-child { font-weight: 700; }
+  .tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); }
+  .tag.test { background: color-mix(in srgb, var(--orange) 18%, transparent); border-color: var(--orange); color: var(--ink); }
+  footer { color: var(--ink-2); font-size: 12.5px; line-height: 1.7; border-top: 1px solid var(--line); padding-top: 16px; }
+  footer a { color: var(--blue); }
+  .loading { padding: 60px 0; text-align: center; color: var(--ink-2); }
+  @media (max-width: 560px) { .controls { gap: 8px; } .kpi .v { font-size: 22px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Metro Leak Watch</h1>
+      <p class="sub">An air-leak detector replayed on seven months of real sensor data from the air compressor of a Porto metro train. Press play and watch the health score cross the alarm line as each reported leak begins.</p>
+    </div>
+    <div class="spacer"></div>
+    <button id="theme" type="button" title="Switch light / dark">Theme</button>
+  </header>
+
+  <div id="app" class="loading">Loading seven months of sensor data…</div>
+
+  <template id="tpl">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="status" id="status">
+      <span class="dotlight"></span>
+      <span class="headline" id="statusHead">Normal</span>
+      <span class="reason" id="statusReason"></span>
+      <span class="spacer"></span>
+      <span class="clock" id="clock"></span>
+    </div>
+
+    <div class="card">
+      <h2>Health score: distance from normal behaviour</h2>
+      <p class="hint" id="chartHint"></p>
+      <div class="controls">
+        <button class="primary" id="play" type="button">▶ Play</button>
+        <button data-speed="60" type="button">1×</button>
+        <button data-speed="600" type="button">10×</button>
+        <button data-speed="3600" type="button">60×</button>
+        <input type="range" id="scrub" min="0" value="0" step="1" aria-label="Time position">
+      </div>
+      <canvas id="main" height="300"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--blue)"></i>health score (30-min average)</span>
+        <span><i style="background:var(--red)"></i>alarm line</span>
+        <span><i style="background:var(--orange);opacity:.45"></i>reported leak</span>
+        <span><i style="background:var(--aqua)"></i>alarm raised</span>
+      </div>
+      <div class="controls" style="margin-top:12px">
+        <span class="chip">Jump to</span>
+        <button data-jump="1" type="button">Leak #1</button>
+        <button data-jump="2" type="button">Leak #2</button>
+        <button data-jump="3" type="button">Leak #3 (test)</button>
+        <button data-jump="4" type="button">Leak #4 (test)</button>
+        <button data-jump="quiet" type="button">A quiet week</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Seven months at a glance</h2>
+      <p class="hint">The whole record. The marker shows where the replay is; orange bands are the four reported leaks, the divider is where the test months begin.</p>
+      <canvas id="overview" height="120"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>What the sensors are doing right now</h2>
+      <p class="hint">Live values at the replay cursor, with how far each sits from the February–March baseline.</p>
+      <div class="grid2" id="tiles"></div>
+      <canvas id="sensors" height="330" style="margin-top:14px"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Every reported leak, and when the detector called it</h2>
+      <p class="hint">Leaks #3 and #4 are in the test months: months the detector was never built or tuned on.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Leak</th><th>Reported start</th><th>Alarm raised</th><th class="num">Delay</th><th class="num">Before the repair</th><th class="num">Event flagged</th></tr></thead>
+          <tbody id="events"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer id="footer"></footer>
+  </template>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (s) { return document.querySelector(s); };
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+  };
+
+  // theme -------------------------------------------------------------------
+  var savedTheme = store.get("mlw-theme", null);
+  if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
+  $("#theme").addEventListener("click", function () {
+    var cur = document.documentElement.getAttribute("data-theme");
+    var isDark = cur ? cur === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var next = isDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    store.set("mlw-theme", next);
+    if (window.__redraw) window.__redraw();
+  });
+
+  var css = function (n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); };
+  var fmtDate = function (d) {
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) + " " +
+           d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  };
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // keep the half hours: 6.5 h of warning should not read as 7
+  var fmtHours = function (h) { return (h >= 24 ? Math.round(h) : (Math.round(h * 2) / 2)) + " h"; };
+
+  fetch("data.json").then(function (r) {
+    if (!r.ok) throw new Error("data.json did not load (" + r.status + ")");
+    return r.json();
+  }).then(build).catch(function (err) {
+    $("#app").innerHTML = '<p style="color:var(--red)">Could not load the data: ' + err.message + "</p>";
+  });
+
+  function build(D) {
+    var app = $("#app");
+    app.classList.remove("loading");
+    app.innerHTML = "";
+    app.appendChild(document.getElementById("tpl").content.cloneNode(true));
+
+    var N = D.minutes.length;
+    var t0 = new Date(D.meta.start.replace(" ", "T"));
+    var timeAt = function (i) { return new Date(t0.getTime() + D.minutes[i] * 60000); };
+    var dist = D.series.distance, alarm = D.series.alarm;
+
+    // 30-minute average of the score, which is what the eye should follow
+    var smooth = new Float32Array(N);
+    (function () {
+      var sum = 0, q = [];
+      for (var i = 0; i < N; i++) {
+        q.push(dist[i]); sum += dist[i];
+        if (q.length > 6) sum -= q.shift();
+        smooth[i] = sum / q.length;
+      }
+    })();
+
+    var testIdx = (function () {
+      var tf = new Date(D.meta.test_from.replace(" ", "T")).getTime();
+      for (var i = 0; i < N; i++) if (timeAt(i).getTime() >= tf) return i;
+      return N - 1;
+    })();
+
+    // reported-leak spans as index ranges
+    var spans = D.events.map(function (e) {
+      var s = new Date(e.start.replace(" ", "T")).getTime(), t = new Date(e.end.replace(" ", "T")).getTime();
+      var a = -1, b = -1;
+      for (var i = 0; i < N; i++) {
+        var ms = timeAt(i).getTime();
+        if (a < 0 && ms >= s) a = i;
+        if (ms <= t) b = i;
+      }
+      var alarmIdx = -1;
+      if (e.alarm_at) {
+        var am = new Date(e.alarm_at.replace(" ", "T")).getTime();
+        for (var j = a; j <= b && j >= 0; j++) if (timeAt(j).getTime() >= am) { alarmIdx = j; break; }
+      }
+      return { ev: e, a: a, b: b, alarmIdx: alarmIdx };
+    });
+
+    // KPIs --------------------------------------------------------------------
+    var test = D.events.filter(function (e) { return e.split === "test"; });
+    var fa = D.false_alarms.test;
+    var everyDays = Math.round(fa.days / Math.max(fa.episodes, 1));
+    var kpis = [
+      { v: D.events.length + " / " + D.events.length, l: "reported leaks detected", n: "including both in the test months" },
+      { v: test.map(function (e) { return e.minutes_after_onset < 60 ? e.minutes_after_onset + " min" : Math.round(e.minutes_after_onset / 60) + " h"; }).join(" · "),
+        l: "delay after each unseen leak began", n: "leak #3 and leak #4" },
+      { v: test.map(function (e) { return fmtHours(e.hours_before_repair); }).join(" · "),
+        l: "warning before the recorded repair", n: "the company's own repair timestamps" },
+      { v: "1 per " + everyDays + " days", l: "false alarms in the test months", n: fa.episodes + " episodes over " + fa.days + " days" }
+    ];
+    $("#kpis").innerHTML = kpis.map(function (k) {
+      return '<div class="kpi"><div class="v">' + k.v + '</div><div class="l">' + k.l + '</div><div class="n">' + k.n + "</div></div>";
+    }).join("");
+
+    $("#chartHint").textContent = "Alarm line = baseline average + " + D.alarm.sigma + " standard deviations = " +
+      D.alarm.threshold + ". An alarm needs " + D.alarm.persistence.needed + " of the last " +
+      D.alarm.persistence.of + " windows above it (" + D.alarm.persistence.minutes + " minutes), so one noisy window never raises it.";
+
+    // sensor tiles ------------------------------------------------------------
+    var tiles = D.signals.map(function (s) {
+      return '<div class="mini" data-k="' + s.key + '"><div class="top"><span class="name">' + s.label +
+        '</span><span class="val">–</span></div><div class="z">–</div></div>';
+    }).join("");
+    $("#tiles").innerHTML = tiles;
+
+    // events table ------------------------------------------------------------
+    $("#events").innerHTML = D.events.map(function (e) {
+      var delay = e.minutes_after_onset === null ? "missed" :
+        (e.minutes_after_onset < 60 ? e.minutes_after_onset + " min" : (e.minutes_after_onset / 60).toFixed(1) + " h");
+      return '<tr class="' + (e.split === "test" ? "test" : "") + '"><td>#' + e.report +
+        ' <span class="tag ' + (e.split === "test" ? "test" : "") + '">' + (e.split === "test" ? "test month" : "training") + "</span></td>" +
+        "<td>" + e.start.slice(0, 16) + "</td><td>" + (e.alarm_at ? e.alarm_at.slice(0, 16) : "—") + "</td>" +
+        '<td class="num">' + delay + "</td>" +
+        '<td class="num">' + (e.hours_before_repair ? fmtHours(e.hours_before_repair) : "not recorded") + "</td>" +
+        '<td class="num">' + (e.share_flagged_pct !== undefined ? e.share_flagged_pct + "%" : "—") + "</td></tr>";
+    }).join("");
+
+    $("#footer").innerHTML =
+      "Data: " + D.meta.source + " — " + D.meta.raw_readings.toLocaleString("en-GB") + " sensor readings from the " +
+      D.meta.unit + ", aggregated into " + D.meta.windows.toLocaleString("en-GB") + " windows of " +
+      D.meta.window_minutes + " minutes.<br>" +
+      "The score, the alarm line and the alarm flags on this page are the output of " + D.meta.built_by +
+      " in Altair AI Studio; this page only replays them.<br>" +
+      "February–March set the baseline, April–May built and tuned the detector, and June–August (both leaks marked “test month”) were scored once, at the end.";
+
+    // ---------------------------------------------------------------- charts
+    var mainC = $("#main"), ovC = $("#overview"), senC = $("#sensors");
+    var cursor = Math.max(0, testIdx), playing = false, speed = 600, lastT = 0;
+    var WINDOW_MIN = 36 * 60; // 36 hours of detail either side
+
+    var scrub = $("#scrub");
+    scrub.max = String(N - 1);
+    scrub.value = String(cursor);
+
+    function setCursor(i, fromScrub) {
+      cursor = Math.max(0, Math.min(N - 1, Math.round(i)));
+      if (!fromScrub) scrub.value = String(cursor);
+      draw();
+    }
+
+    scrub.addEventListener("input", function () { setCursor(+scrub.value, true); });
+
+    $("#play").addEventListener("click", function () { playing ? pause() : play(); });
+    function play() {
+      playing = true; $("#play").textContent = "❚❚ Pause"; lastT = performance.now();
+      requestAnimationFrame(tick);
+    }
+    function pause() { playing = false; $("#play").textContent = "▶ Play"; }
+    function tick(now) {
+      if (!playing) return;
+      var dtSec = (now - lastT) / 1000; lastT = now;
+      var stepMinutes = dtSec * speed;                    // simulated minutes per real second
+      var target = D.minutes[cursor] + stepMinutes;
+      var i = cursor;
+      while (i < N - 1 && D.minutes[i] < target) i++;
+      if (i >= N - 1) { setCursor(N - 1); pause(); return; }
+      setCursor(i);
+      requestAnimationFrame(tick);
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll("[data-speed]"), function (b) {
+      b.addEventListener("click", function () {
+        speed = +b.dataset.speed;
+        Array.prototype.forEach.call(document.querySelectorAll("[data-speed]"), function (o) {
+          o.setAttribute("aria-pressed", String(o === b));
+        });
+      });
+      if (+b.dataset.speed === speed) b.setAttribute("aria-pressed", "true");
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll("[data-jump]"), function (b) {
+      b.addEventListener("click", function () {
+        var k = b.dataset.jump;
+        if (k === "quiet") {
+          var q = Math.round(N * 0.82);
+          for (var i = q; i < N - 300; i++) {
+            var clear = true;
+            for (var s = 0; s < spans.length; s++) if (i > spans[s].a - 600 && i < spans[s].b + 600) clear = false;
+            if (clear) { setCursor(i); break; }
+          }
+        } else {
+          var sp = spans[+k - 1];
+          setCursor(Math.max(0, sp.a - 90));   // start ~7 h before the leak
+        }
+        pause();
+      });
+    });
+
+    function fit(c) {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // remember the designed CSS height once: setting c.height below rewrites the height
+      // attribute, so reading it back on the next frame would grow the chart on scaled screens
+      if (!c.dataset.h) c.dataset.h = c.getAttribute("height");
+      var w = c.clientWidth, h = +c.dataset.h;
+      c.style.height = h + "px";
+      if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+        c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      }
+      var ctx = c.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      return { ctx: ctx, w: w, h: h };
+    }
+
+    function rangeAround(i) {
+      var t = D.minutes[i];
+      var a = i, b = i;
+      while (a > 0 && D.minutes[a] > t - WINDOW_MIN) a--;
+      while (b < N - 1 && D.minutes[b] < t + WINDOW_MIN * 0.25) b++;
+      return { a: a, b: b };
+    }
+
+    function axisTimes(ctx, w, h, pad, a, b) {
+      ctx.fillStyle = css("--muted"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "center";
+      var steps = 5;
+      for (var s = 0; s <= steps; s++) {
+        var i = Math.round(a + (b - a) * s / steps);
+        var x = pad.l + (w - pad.l - pad.r) * (s / steps);
+        var d = timeAt(i);
+        ctx.fillText(d.getDate() + " " + MONTHS[d.getMonth()] + " " + String(d.getHours()).padStart(2, "0") + ":00", x, h - 6);
+      }
+    }
+
+    function drawMain() {
+      var f = fit(mainC), ctx = f.ctx, w = f.w, h = f.h;
+      var pad = { l: 44, r: 12, t: 12, b: 24 };
+      var r = rangeAround(cursor), a = r.a, b = r.b;
+      var maxY = Math.max(D.alarm.threshold * 1.35, 6);
+      for (var i = a; i <= b; i++) maxY = Math.max(maxY, smooth[i] * 1.12);
+      var X = function (i) { return pad.l + (w - pad.l - pad.r) * ((i - a) / Math.max(1, b - a)); };
+      var Y = function (v) { return pad.t + (h - pad.t - pad.b) * (1 - Math.min(v, maxY) / maxY); };
+
+      // reported leak bands
+      ctx.fillStyle = css("--orange") + "3d";
+      spans.forEach(function (sp) {
+        if (sp.b < a || sp.a > b) return;
+        var x1 = X(Math.max(sp.a, a)), x2 = X(Math.min(sp.b, b));
+        ctx.fillRect(x1, pad.t, Math.max(2, x2 - x1), h - pad.t - pad.b);
+      });
+
+      // grid + y labels
+      ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+      ctx.fillStyle = css("--muted"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "right";
+      for (var g = 0; g <= 4; g++) {
+        var v = maxY * g / 4, y = Y(v);
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+        ctx.fillText(v.toFixed(0), pad.l - 6, y + 3.5);
+      }
+
+      // alarm line
+      ctx.strokeStyle = css("--red"); ctx.lineWidth = 1.6; ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(pad.l, Y(D.alarm.threshold)); ctx.lineTo(w - pad.r, Y(D.alarm.threshold)); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // score up to the cursor, then faint ahead
+      ctx.lineWidth = 2; ctx.lineJoin = "round";
+      ctx.strokeStyle = css("--muted") + "66";
+      ctx.beginPath();
+      for (var k = cursor; k <= b; k++) { var x = X(k), y = Y(smooth[k]); k === cursor ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+      ctx.stroke();
+      ctx.strokeStyle = css("--blue");
+      ctx.beginPath();
+      for (var k2 = a; k2 <= cursor; k2++) { var x2 = X(k2), y2 = Y(smooth[k2]); k2 === a ? ctx.moveTo(x2, y2) : ctx.lineTo(x2, y2); }
+      ctx.stroke();
+
+      // alarm markers inside view
+      spans.forEach(function (sp) {
+        if (sp.alarmIdx < a || sp.alarmIdx > b || sp.alarmIdx < 0) return;
+        var x = X(sp.alarmIdx);
+        ctx.strokeStyle = css("--aqua"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
+        ctx.fillStyle = css("--aqua"); ctx.font = "600 11px system-ui, sans-serif"; ctx.textAlign = "left";
+        ctx.fillText("alarm", x + 5, pad.t + 12);
+      });
+
+      // cursor
+      var cx = X(cursor);
+      ctx.strokeStyle = css("--ink"); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(cx, pad.t); ctx.lineTo(cx, h - pad.b); ctx.stroke();
+      ctx.fillStyle = alarm[cursor] ? css("--red") : css("--blue");
+      ctx.beginPath(); ctx.arc(cx, Y(smooth[cursor]), 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = css("--panel"); ctx.lineWidth = 2; ctx.stroke();
+
+      axisTimes(ctx, w, h, pad, a, b);
+    }
+
+    function drawOverview() {
+      var f = fit(ovC), ctx = f.ctx, w = f.w, h = f.h;
+      var pad = { l: 8, r: 8, t: 10, b: 18 };
+      var X = function (i) { return pad.l + (w - pad.l - pad.r) * (i / (N - 1)); };
+      var maxY = D.alarm.threshold * 2.4;
+      var Y = function (v) { return pad.t + (h - pad.t - pad.b) * (1 - Math.min(v, maxY) / maxY); };
+
+      ctx.fillStyle = css("--orange") + "55";
+      spans.forEach(function (sp) { ctx.fillRect(X(sp.a), pad.t, Math.max(2.5, X(sp.b) - X(sp.a)), h - pad.t - pad.b); });
+
+      // decimated min/max envelope, one column per pixel
+      ctx.strokeStyle = css("--blue"); ctx.lineWidth = 1;
+      var cols = Math.max(80, Math.floor(w));
+      ctx.beginPath();
+      for (var c = 0; c < cols; c++) {
+        var i0 = Math.floor(N * c / cols), i1 = Math.floor(N * (c + 1) / cols);
+        var mn = Infinity, mx = -Infinity;
+        for (var i = i0; i < i1; i++) { if (smooth[i] < mn) mn = smooth[i]; if (smooth[i] > mx) mx = smooth[i]; }
+        if (mn === Infinity) continue;
+        var x = pad.l + (w - pad.l - pad.r) * (c / cols);
+        ctx.moveTo(x, Y(mn)); ctx.lineTo(x, Y(mx));
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = css("--red"); ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(pad.l, Y(D.alarm.threshold)); ctx.lineTo(w - pad.r, Y(D.alarm.threshold)); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // test-month divider
+      var tx = X(testIdx);
+      ctx.strokeStyle = css("--ink-2"); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(tx, pad.t); ctx.lineTo(tx, h - pad.b); ctx.stroke();
+      ctx.fillStyle = css("--ink-2"); ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left";
+      ctx.fillText("test months →", tx + 5, pad.t + 11);
+
+      // month ticks
+      ctx.fillStyle = css("--muted"); ctx.textAlign = "center";
+      var seen = {};
+      for (var q = 0; q < N; q += 200) {
+        var d = timeAt(q), key = d.getMonth();
+        if (!seen[key]) { seen[key] = true; ctx.fillText(MONTHS[key], X(q), h - 5); }
+      }
+
+      var cx = X(cursor);
+      ctx.strokeStyle = css("--ink"); ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(cx, pad.t - 4); ctx.lineTo(cx, h - pad.b); ctx.stroke();
+    }
+
+    function drawSensors() {
+      var keys = D.signals.slice(0, 3);
+      var f = fit(senC), ctx = f.ctx, w = f.w, h = f.h;
+      var r = rangeAround(cursor), a = r.a, b = r.b;
+      var rowH = (h - 18) / keys.length;
+      keys.forEach(function (sig, row) {
+        var vals = D.series[sig.key];
+        var mn = Infinity, mx = -Infinity;
+        for (var i = a; i <= b; i++) { var v = vals[i]; if (v === null) continue; if (v < mn) mn = v; if (v > mx) mx = v; }
+        if (mn === Infinity) { mn = 0; mx = 1; }
+        if (mx - mn < 1e-6) { mx = mn + 1; }
+        var pad = { l: 44, r: 12, t: row * rowH + 14, b: 10 };
+        var X = function (i) { return pad.l + (w - pad.l - pad.r) * ((i - a) / Math.max(1, b - a)); };
+        var Y = function (v) { return pad.t + (rowH - 26) * (1 - (v - mn) / (mx - mn)); };
+
+        ctx.fillStyle = css("--orange") + "33";
+        spans.forEach(function (sp) {
+          if (sp.b < a || sp.a > b) return;
+          var x1 = X(Math.max(sp.a, a)), x2 = X(Math.min(sp.b, b));
+          ctx.fillRect(x1, pad.t, Math.max(2, x2 - x1), rowH - 26);
+        });
+
+        ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(pad.l, pad.t + rowH - 26); ctx.lineTo(w - pad.r, pad.t + rowH - 26); ctx.stroke();
+
+        ctx.strokeStyle = css("--blue"); ctx.lineWidth = 1.6; ctx.beginPath();
+        var started = false;
+        for (var j = a; j <= b; j++) {
+          var vv = vals[j];
+          if (vv === null) { started = false; continue; }
+          var x = X(j), y = Y(vv);
+          started ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          started = true;
+        }
+        ctx.stroke();
+
+        var cx = X(cursor);
+        ctx.strokeStyle = css("--ink") + "99"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx, pad.t); ctx.lineTo(cx, pad.t + rowH - 26); ctx.stroke();
+
+        ctx.fillStyle = css("--ink-2"); ctx.font = "600 11.5px system-ui, sans-serif"; ctx.textAlign = "left";
+        ctx.fillText(sig.label + " (" + sig.unit + ")", pad.l, pad.t - 3);
+        ctx.fillStyle = css("--muted"); ctx.font = "10.5px system-ui, sans-serif"; ctx.textAlign = "right";
+        ctx.fillText(mx.toFixed(1), pad.l - 6, pad.t + 8);
+        ctx.fillText(mn.toFixed(1), pad.l - 6, pad.t + rowH - 28);
+      });
+    }
+
+    function zOf(key, i) {
+      var st = D.baseline_stats[key];
+      var v = D.series[key][i];
+      if (!st || v === null || !st.sd) return null;
+      return (v - st.mean) / st.sd;
+    }
+
+    function updateStatus() {
+      var on = !!alarm[cursor];
+      var box = $("#status");
+      box.classList.toggle("on", on);
+      $("#clock").textContent = fmtDate(timeAt(cursor)) +
+        (timeAt(cursor) >= new Date(D.meta.test_from.replace(" ", "T")) ? "  ·  test month" : "  ·  training month");
+
+      // which reported leak, if any, is running right now
+      var inEvent = null;
+      spans.forEach(function (sp) { if (cursor >= sp.a && cursor <= sp.b) inEvent = sp; });
+
+      if (on) {
+        var ranked = D.signals.map(function (s) {
+          return { s: s, z: zOf(s.key, cursor) };
+        }).filter(function (o) { return o.z !== null; }).sort(function (p, q) { return Math.abs(q.z) - Math.abs(p.z); });
+        var top = ranked.slice(0, 2).map(function (o) {
+          return o.s.label + " " + Math.abs(o.z).toFixed(1) + "σ " + (o.z > 0 ? "high" : "low");
+        }).join(", ");
+        $("#statusHead").textContent = "ALARM — behaviour far from normal";
+        var extra = "";
+        if (inEvent) {
+          var mins = Math.round((timeAt(cursor) - new Date(inEvent.ev.start.replace(" ", "T"))) / 60000);
+          extra = "  ·  reported leak #" + inEvent.ev.report + " began " + (mins < 60 ? mins + " min" : (mins / 60).toFixed(1) + " h") + " ago";
+        }
+        $("#statusReason").textContent = "score " + smooth[cursor].toFixed(1) + " vs line " + D.alarm.threshold + " — " + top + extra;
+      } else {
+        $("#statusHead").textContent = inEvent ? "Watching — score rising" : "Normal";
+        $("#statusReason").textContent = "score " + smooth[cursor].toFixed(1) + " of " + D.alarm.threshold +
+          (inEvent ? "  ·  reported leak #" + inEvent.ev.report + " is running" : "");
+      }
+
+      Array.prototype.forEach.call(document.querySelectorAll(".mini"), function (el) {
+        var key = el.dataset.k;
+        var sig = D.signals.filter(function (s) { return s.key === key; })[0];
+        var v = D.series[key][cursor], z = zOf(key, cursor);
+        el.querySelector(".val").textContent = v === null ? "–" :
+          (sig.unit === "share" ? Math.round(v * 100) + "%" : v.toFixed(2) + " " + sig.unit);
+        var zEl = el.querySelector(".z");
+        if (z === null) { zEl.textContent = "–"; return; }
+        zEl.textContent = Math.abs(z).toFixed(1) + "σ " + (z > 0 ? "above" : "below") + " baseline";
+        zEl.style.color = Math.abs(z) > 3 ? css("--red") : css("--muted");
+      });
+    }
+
+    function draw() { drawMain(); drawOverview(); drawSensors(); updateStatus(); }
+    window.__redraw = draw;
+    window.addEventListener("resize", draw);
+
+    // click on the overview to jump
+    ovC.addEventListener("click", function (e) {
+      var rect = ovC.getBoundingClientRect();
+      var frac = (e.clientX - rect.left - 8) / (rect.width - 16);
+      setCursor(Math.round(frac * (N - 1)));
+      pause();
+    });
+
+    // start the story just before leak #3, the first test-month failure
+    var third = spans[2];
+    setCursor(Math.max(0, third.a - 90));
+    draw();
+  }
+})();
+</script>
+</body>
+</html>
